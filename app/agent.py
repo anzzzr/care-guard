@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import psycopg
 from pydantic import BaseModel, ValidationError
 
+from app import db, guardrails, retrieval
+from app.config import settings
 from app.llm import LLMClient, Message, ToolResult
 from app.models import Citation, Member
 from app.tools import TOOL_SPECS, ToolContext, run_tool
@@ -58,6 +60,7 @@ class AgentResult:
     refused: bool
     ticket_id: int | None
     retrieved_chunks: list[dict]
+    retrieval_top_score: float | None
     tokens_in: int
     tokens_out: int
 
@@ -75,32 +78,52 @@ def run_agent(
     conn: psycopg.Connection, member: Member, question: str, llm: LLMClient
 ) -> AgentResult:
     ctx = ToolContext(conn=conn, member=member)
-    messages = [Message(role="user", text=question)]
     tools_used: list[str] = []
     tokens_in = tokens_out = 0
+    top_score: float | None = None
 
-    def result(final: FinalAnswer | None) -> AgentResult:
+    def result(answer: str, refused: bool, citations: list[Citation] | None = None) -> AgentResult:
+        scores = [c["score"] for c in ctx.retrieved_chunks.values()]
+        if top_score is not None:
+            scores.append(top_score)
         return AgentResult(
-            answer=final.answer if final else FALLBACK_ANSWER,
-            citations=final.citations if final else [],
+            answer=answer,
+            citations=citations or [],
             tools_used=tools_used,
-            refused=final is None,
+            refused=refused,
             ticket_id=ctx.ticket_id,
             retrieved_chunks=list(ctx.retrieved_chunks.values()),
+            retrieval_top_score=max(scores) if scores else None,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
         )
 
-    # Each round runs at least one tool, so this ends after at most MAX_TOOL_CALLS + 1 LLM calls.
+    # 1. Medical advice: fixed reply, no LLM.
+    if guardrails.is_medical_advice(question):
+        return result(guardrails.MEDICAL_REPLY, refused=True)
+
+    # 2. Retrieval gate for policy questions: weak match -> ticket for a human, no LLM.
+    if not guardrails.is_claim_question(question):
+        best = retrieval.search_policy(conn, member.plan_id, question, k=1)
+        top_score = best[0]["score"] if best else 0.0
+        if top_score < settings.min_score:
+            ctx.ticket_id = db.create_ticket(
+                conn, member.id, None, f"Question not found in policy: {question}"
+            )
+            return result(guardrails.NOT_FOUND_REPLY, refused=True)
+
+    # 3. Tool-calling loop. Each round runs at least one tool, so this ends after
+    #    at most MAX_TOOL_CALLS + 1 LLM calls.
+    messages = [Message(role="user", text=question)]
     while True:
         response = llm.generate(SYSTEM_PROMPT, messages, TOOL_SPECS)
         tokens_in += response.tokens_in
         tokens_out += response.tokens_out
 
         if not response.tool_calls:
-            return result(parse_final_answer(response.text))
+            break
         if len(tools_used) + len(response.tool_calls) > MAX_TOOL_CALLS:
-            return result(None)
+            return result(FALLBACK_ANSWER, refused=True)
 
         messages.append(
             Message(
@@ -115,3 +138,24 @@ def run_agent(
             tools_used.append(call.name)
             results.append(ToolResult(call=call, result=run_tool(ctx, call)))
         messages.append(Message(role="tool", tool_results=results))
+
+    # 4. Check the final answer in code.
+    final = parse_final_answer(response.text)
+    if final is None:
+        return result(FALLBACK_ANSWER, refused=True)
+
+    # An answer that used the policy must quote it, and every quote must be real.
+    used_policy = "search_policy" in tools_used
+    if (used_policy and not final.citations) or not guardrails.citations_are_verified(
+        final.citations, list(ctx.retrieved_chunks.values())
+    ):
+        return result(FALLBACK_ANSWER, refused=True)
+
+    # The LLM must never claim an appeal or claim was approved; only a human decides.
+    about_appeal = "create_appeal_ticket" in tools_used or "appeal" in question.lower()
+    if about_appeal and guardrails.claims_false_approval(final.answer):
+        if ctx.ticket_id is not None:
+            return result(guardrails.appeal_registered_reply(ctx.ticket_id), refused=False)
+        return result(FALLBACK_ANSWER, refused=True)
+
+    return result(final.answer, refused=False, citations=final.citations)

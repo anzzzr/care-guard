@@ -52,3 +52,47 @@ def create_ticket(
         "INSERT INTO review_tickets (member_id, claim_id, reason) VALUES (%s, %s, %s) RETURNING id",
         (member_id, claim_id, reason),
     ).fetchone()["id"]
+
+
+TICKET_COLUMNS = """id, member_id, claim_id, reason, status, created_at,
+                    decided_by, decided_at, decision_note"""
+
+
+def fetch_pending_tickets(conn: psycopg.Connection) -> list[dict]:
+    return conn.execute(
+        f"SELECT {TICKET_COLUMNS} FROM review_tickets WHERE status = 'pending' ORDER BY id"
+    ).fetchall()
+
+
+def decide_ticket(
+    conn: psycopg.Connection, ticket_id: int, new_status: str, decided_by: str, note: str
+) -> dict | None:
+    """Decide a pending ticket. Returns None if it does not exist or was already decided.
+    The `status = 'pending'` condition makes two simultaneous decisions safe: only one wins."""
+    return conn.execute(
+        f"""
+        UPDATE review_tickets
+        SET status = %s, decided_by = %s, decided_at = now(), decision_note = %s
+        WHERE id = %s AND status = 'pending'
+        RETURNING {TICKET_COLUMNS}
+        """,
+        (new_status, decided_by, note, ticket_id),
+    ).fetchone()
+
+
+def fetch_ticket_status(conn: psycopg.Connection, ticket_id: int) -> str | None:
+    row = conn.execute("SELECT status FROM review_tickets WHERE id = %s", (ticket_id,)).fetchone()
+    return row["status"] if row else None
+
+
+def fetch_metrics(conn: psycopg.Connection) -> dict:
+    return conn.execute(
+        """
+        SELECT count(*) AS requests,
+               coalesce(avg(refused::int), 0) AS refusal_rate,
+               coalesce(avg(latency_ms), 0) AS avg_latency_ms,
+               coalesce(avg(coalesce(tokens_in, 0) + coalesce(tokens_out, 0)), 0) AS avg_tokens,
+               (SELECT count(*) FROM review_tickets WHERE status = 'pending') AS pending_tickets
+        FROM request_logs
+        """
+    ).fetchone()

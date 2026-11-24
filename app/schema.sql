@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS review_tickets (
     decided_by text,
     decided_at timestamptz
 );
+-- Added in M4; ALTER keeps databases created before M4 working.
+ALTER TABLE review_tickets ADD COLUMN IF NOT EXISTS decision_note text;
 
 CREATE TABLE IF NOT EXISTS policy_chunks (
     id            serial PRIMARY KEY,

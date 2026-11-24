@@ -114,7 +114,7 @@ def test_appeal_on_another_members_claim_creates_nothing(
 
 def test_tool_calls_are_capped(ask: AskFn) -> None:
     script = [tool("search_policy", query="anything")] * (MAX_TOOL_CALLS + 1)
-    body, fake = ask("Loop forever", script)
+    body, fake = ask("What is the room rent limit?", script)
     assert len(body["tools_used"]) == MAX_TOOL_CALLS
     assert len(fake.calls) == MAX_TOOL_CALLS + 1
     assert body["refused"] is True
@@ -122,7 +122,7 @@ def test_tool_calls_are_capped(ask: AskFn) -> None:
 
 
 def test_answer_that_is_not_json_falls_back(ask: AskFn) -> None:
-    body, _ = ask("Hi", [LLMResponse(text="Sure, your claim is approved!")])
+    body, _ = ask("Is my claim CLM-1001 settled?", [LLMResponse(text="Sure, it is settled!")])
     assert body["refused"] is True
     assert body["answer"] == FALLBACK_ANSWER
 
@@ -152,6 +152,8 @@ class FailingLLM:
 
 def test_llm_provider_error_becomes_clean_503(client: TestClient) -> None:
     app.dependency_overrides[get_llm] = FailingLLM
-    response = client.post("/v1/ask", json={"question": "hi"}, headers={"X-API-Key": ASHA})
+    response = client.post(
+        "/v1/ask", json={"question": "Show my claims"}, headers={"X-API-Key": ASHA}
+    )
     assert response.status_code == 503
     assert "403" not in response.text  # provider details are not shown to members

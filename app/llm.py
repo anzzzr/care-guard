@@ -56,7 +56,13 @@ class LLMClient(Protocol):
 
 class GeminiClient:
     def __init__(self, api_key: str, model: str) -> None:
-        self._client = genai.Client(api_key=api_key)
+        # Retry short-lived errors (rate limit, "high demand") a few times before giving up.
+        retry = types.HttpRetryOptions(
+            attempts=4, initial_delay=1.0, max_delay=8.0, http_status_codes=[429, 500, 503, 504]
+        )
+        self._client = genai.Client(
+            api_key=api_key, http_options=types.HttpOptions(retry_options=retry)
+        )
         self._model = model
 
     def generate(self, system: str, messages: list[Message], tools: list[dict]) -> LLMResponse:
