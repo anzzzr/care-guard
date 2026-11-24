@@ -16,7 +16,7 @@ from app.models import Member
 class ToolContext:
     conn: psycopg.Connection
     member: Member
-    # Everything search_policy returned in this request, by chunk id (for the M4 quote check).
+    # Everything search_policy returned in this request, by chunk id (used to verify quotes).
     retrieved_chunks: dict[int, dict] = field(default_factory=dict)
     ticket_id: int | None = None
 

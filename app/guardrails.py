@@ -4,7 +4,7 @@ import re
 
 from app.models import Citation
 
-# ---------- Fixed replies (written by us, never by the LLM) ----------
+# Fixed replies (written by us, never by the LLM)
 
 MEDICAL_REPLY = (
     "I can't give medical advice. Please talk to your doctor about what treatment is right "
@@ -23,7 +23,7 @@ def appeal_registered_reply(ticket_id: int) -> str:
     )
 
 
-# ---------- Medical advice (checked on the question, before the LLM) ----------
+# Medical advice (checked on the question, before the LLM)
 
 _MEDICAL_PATTERNS = [
     r"\bshould i (get|have|go for|undergo|take|do|start|stop|try)\b",
@@ -43,7 +43,7 @@ def is_medical_advice(question: str) -> bool:
     return bool(_MEDICAL_RE.search(question))
 
 
-# ---------- Which questions go through the retrieval gate ----------
+# Which questions go through the retrieval gate
 
 _CLAIM_RE = re.compile(r"\bCLM-?\d+|\bclaims?\b|\bappeal", re.IGNORECASE)
 
@@ -53,7 +53,7 @@ def is_claim_question(question: str) -> bool:
     return bool(_CLAIM_RE.search(question))
 
 
-# ---------- Verified quotes (checked on the LLM's answer) ----------
+# Verified quotes (checked on the LLM's answer)
 
 MIN_QUOTE_WORDS = 5
 
@@ -78,7 +78,7 @@ def citations_are_verified(citations: list[Citation], retrieved_chunks: list[dic
     return True
 
 
-# ---------- False approvals (checked on answers about appeals) ----------
+# False approvals (checked on answers about appeals)
 
 _APPROVAL_RE = re.compile(
     r"approved your (appeal|claim)"
@@ -93,7 +93,7 @@ def claims_false_approval(answer: str) -> bool:
     return bool(_APPROVAL_RE.search(answer))
 
 
-# ---------- PII redaction (applied before anything is logged) ----------
+# PII redaction (applied before anything is logged)
 
 _PII_PATTERNS = [
     # Order matters: the 12-digit Aadhaar check runs before the 10-digit phone check.

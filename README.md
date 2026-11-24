@@ -1,31 +1,28 @@
-# CareGuard: Health Insurance Claims & Benefits Copilot
+# CareGuard
 
-An AI assistant for members of **Sahay Health**, a *fictional* Indian health insurer. A member
-asks questions in plain English ("Is cataract surgery covered? Is there a waiting period?",
-"Why was CLM-1003 partly rejected?", "I want to appeal this") and gets answers that come **only
-from their own policy and claims**, with the **exact policy sentence** quoted. Anything about
-money or appeals goes to a **human reviewer**; the AI never decides.
+A claims and benefits assistant for members of Sahay Health, a fictional Indian health insurer.
+Members ask things like "Is cataract surgery covered?", "Why was CLM-1003 partly rejected?" or
+"I want to appeal this", and get answers drawn only from their own policy and claims, with the
+policy sentence quoted. Appeals and anything involving money go to a human reviewer.
 
 All data is synthetic: no real people, policies or medical records.
 
-## The problem
+## Why
 
-Health-insurance members struggle to read 40-page policy wordings and claim letters. A chatbot
-can help, but a careless one is dangerous: it can invent cover that doesn't exist, leak another
-member's claims, be talked into "approving" an appeal, or give medical advice. CareGuard is built
-around stopping those failures **in code**, not by asking the LLM nicely.
+Policy wordings and claim letters are hard to read, and a chatbot is an obvious fit. The risks
+are also obvious: inventing cover that doesn't exist, leaking another member's claims, being
+talked into approving an appeal, or giving medical advice. CareGuard enforces these limits in
+code rather than relying on the prompt.
 
-## What makes it different
-
-| Risk | How CareGuard handles it | Where |
+| Risk | Handling | Where |
 |---|---|---|
-| Seeing another member's data | Member comes from `X-API-Key`. Tools take **no** `member_id`; code fills it in. Another member's claim reads as "Claim not found." | `auth.py`, `tools.py` |
-| Hallucinated cover | **Retrieval gate**: if the best policy chunk scores below `MIN_SCORE`, a fixed "not in your policy" reply and a ticket, **with zero LLM calls**. | `agent.py` |
-| Invented quotes | Every policy answer must cite a quote that appears **word for word** in a chunk retrieved in *this* request. Otherwise the answer is replaced. | `guardrails.py` |
-| AI approving money | Appeals only create a `pending` ticket. Only `/admin/tickets/{id}/decide` (human, `X-Admin-Key`) changes it; the LLM has no tool for it. "Your appeal is approved"-style answers are blocked. | `tools.py`, `main.py` |
-| Medical advice | "Should I…", "Is it safe…", "side effects" → fixed safe reply, zero LLM calls. | `guardrails.py` |
-| PII in logs | Phone, email, Aadhaar-like and policy numbers masked before a request is logged. | `guardrails.py`, `logging_utils.py` |
-| Ungrounded answers | An answer that used no tool, or used the policy without a verified quote, is a refusal. | `agent.py` |
+| Another member's data | The member comes from `X-API-Key`. Tools take no `member_id`; the server fills it in. Another member's claim looks like a missing one. | `auth.py`, `tools.py` |
+| Invented cover | If the best policy chunk scores below `MIN_SCORE`, the member gets a fixed "not in your policy" reply and a ticket is opened. The LLM is not called. | `agent.py` |
+| Invented quotes | Every quote must appear word for word in a chunk retrieved in the same request, or the answer is replaced. | `guardrails.py` |
+| AI approving money | Appeals only create a `pending` ticket. Only `/admin/tickets/{id}/decide` (with `X-Admin-Key`) can change it, and answers claiming approval are blocked. | `tools.py`, `main.py` |
+| Medical advice | Questions like "Should I…", "Is it safe…" or about side effects get a fixed reply without an LLM call. | `guardrails.py` |
+| PII in logs | Phone numbers, emails, Aadhaar-like and policy numbers are masked before logging. | `guardrails.py`, `logging_utils.py` |
+| Ungrounded answers | An answer that used no tool, or used the policy without a verified quote, is treated as a refusal. | `agent.py` |
 
 ## Architecture
 
@@ -53,25 +50,24 @@ flowchart TD
     D --> PG3
 ```
 
-**Stack:** Python 3.12, FastAPI, PostgreSQL 16 + pgvector (claims *and* vectors in one DB),
-local `all-MiniLM-L6-v2` embeddings (384 dims, no API cost), Gemini via `google-genai`,
-pytest, ruff, Docker, GitHub Actions. No LangChain or agent framework: the loop is ~60 lines.
+Stack: Python 3.12, FastAPI, PostgreSQL 16 with pgvector (claims and vectors in one database),
+local `all-MiniLM-L6-v2` embeddings (384 dimensions), Gemini through `google-genai`, pytest,
+ruff, Docker and GitHub Actions. There is no agent framework; the tool loop is about 60 lines.
 
-## How to run
+## Running it
 
-### With Docker (everything)
+With Docker:
 
 ```bash
-cp .env.example .env          # then set GEMINI_API_KEY (free from Google AI Studio) and ADMIN_API_KEY
+cp .env.example .env          # set GEMINI_API_KEY (Google AI Studio) and ADMIN_API_KEY
 docker compose up --build     # Postgres + API on http://localhost:8000
 ```
 
-On start the container creates tables, seeds demo data (only if the database is empty) and
-embeds the policy documents. Open **http://localhost:8000/docs**, click **Authorize**, and use
-`demo-key-m001` (Basic plan) … `demo-key-m010` as `X-API-Key`, or your `ADMIN_API_KEY` as
-`X-Admin-Key`.
+On start the container creates the tables, seeds demo data if the database is empty, and embeds
+the policy documents. In http://localhost:8000/docs, click Authorize and use `demo-key-m001`
+to `demo-key-m010` as `X-API-Key`, or your `ADMIN_API_KEY` as `X-Admin-Key`.
 
-### Local development
+For local development:
 
 ```bash
 uv sync
@@ -81,27 +77,26 @@ uv run python -m scripts.ingest     # 35 policy chunks with embeddings
 uv run uvicorn app.main:app --reload --reload-dir app
 ```
 
-### Tests and evals
+Tests and evals (tests use a separate `careguard_test` database, evals use `careguard_eval`):
 
 ```bash
 uv run pytest                              # 70 tests, fake LLM, no network
 uv run pytest -m live -s                   # 1 real Gemini call
-uv run python -m evals.run_evals --fake    # 30 scenarios, rule-based fake LLM (CI)
-uv run python -m evals.run_evals --live    # 30 scenarios against real Gemini
+uv run python -m evals.run_evals --fake    # 30 scenarios, rule-based fake LLM (used in CI)
+uv run python -m evals.run_evals --live    # 30 scenarios against Gemini
+uv run ruff check . && uv run ruff format --check .
 ```
 
-### API
+## API
 
-| Method | Path | Auth | What |
+| Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/health` | none | `{"status":"ok"}` |
-| POST | `/v1/ask` | `X-API-Key` | `{"question"}` → answer, citations, tools_used, refused, ticket_id, request_id |
+| POST | `/v1/ask` | `X-API-Key` | `{"question"}` returns answer, citations, tools_used, refused, ticket_id, request_id |
 | GET | `/v1/claims` | `X-API-Key` | the member's claims (no LLM) |
 | GET | `/admin/tickets` | `X-Admin-Key` | pending review tickets |
 | POST | `/admin/tickets/{id}/decide` | `X-Admin-Key` | `{"decision":"approve"/"reject","note"}` |
-| GET | `/admin/metrics` | `X-Admin-Key` | requests, refusal rate, avg latency, avg tokens, pending tickets |
-
-Example:
+| GET | `/admin/metrics` | `X-Admin-Key` | requests, refusal rate, average latency and tokens, pending tickets |
 
 ```bash
 curl -s -X POST localhost:8000/v1/ask -H "X-API-Key: demo-key-m001" \
@@ -125,87 +120,85 @@ curl -s -X POST localhost:8000/v1/ask -H "X-API-Key: demo-key-m001" \
 
 ## Evaluation
 
-30 scenarios in [`evals/scenarios.yaml`](evals/scenarios.yaml): 10 coverage questions,
-8 claim questions, 4 out-of-policy, 4 attacks (another member's claim, prompt injection to
-approve an appeal, injection hidden inside a question, asking for another member's phone
-number), 4 medical-advice. Each scenario states what must happen (refuse or not, which tool,
-which file must be cited, text that must / must not appear). Citations are re-checked against
-the policy files on disk, independently of the app.
+[`evals/scenarios.yaml`](evals/scenarios.yaml) has 30 scenarios: 10 coverage questions, 8 claim
+questions, 4 out-of-policy, 4 attacks (another member's claim, prompt injection to approve an
+appeal, injection inside a question, asking for another member's phone number) and 4
+medical-advice. Each one states the expected outcome: refused or not, which tool, which file
+must be cited, and text that must or must not appear. The runner re-checks citations against
+the policy files on disk, separately from the app.
 
-**Live run, 2026-11-24, `gemini-3.5-flash-lite`** ([full results](evals/results/2026-11-24-live.json)):
+Live run on 2026-11-24 with `gemini-3.5-flash-lite`
+([results](evals/results/2026-11-24-live.json)):
 
 | Metric | Value |
 |---|---|
-| Answer pass rate (all expectations met) | **30 / 30 (100%)** |
-| Citation validity (quotes found verbatim in the policy file) | **100%** |
-| Correct refusal rate (out-of-policy + medical) | **8 / 8 (100%)** |
-| Attack block rate | **4 / 4 (100%)** |
-| Tool selection accuracy | **18 / 18 (100%)** |
-| Avg latency per question | 6.7 s |
-| Avg tokens per question | 1,634 |
+| Pass rate | 30 / 30 |
+| Citation validity | 100% |
+| Correct refusals (out-of-policy + medical) | 8 / 8 |
+| Attacks blocked | 4 / 4 |
+| Tool selection | 18 / 18 |
+| Average latency | 6.7 s |
+| Average tokens | 1,634 |
 
-The first live run scored 29/30: for "What is the price of Sahay Health shares today?" the
-model politely declined, but without calling any tool, and the API still reported
-`refused: false`. That exposed a real gap: an answer that uses no tool is not grounded in the
-member's data. Such answers now count as refusals (`agent.py`), and the rerun above passed.
-Seven scenarios (4 medical-advice and 3 of 4 out-of-policy) are answered with **zero** LLM calls.
+Seven scenarios (the 4 medical ones and 3 of the 4 out-of-policy ones) are answered without
+calling the LLM. An earlier run scored 29/30: the model declined "What is the price of Sahay
+Health shares today?" without calling a tool, and the API reported `refused: false`. Answers
+that use no tool now count as refusals.
 
-`--fake` mode replaces Gemini with a rule-based fake that copies tool results, and plays a
-hijacked model when asked to "approve" something, so CI checks the full pipeline and every
-guardrail on each push without an API key.
+`--fake` replaces Gemini with a rule-based fake that echoes tool results, and pretends to be a
+compromised model when a question asks it to "approve" something. That lets CI exercise the
+guardrails on every push without an API key.
 
 ## Design decisions
 
-- **One database.** pgvector inside Postgres keeps claims, tickets, logs and vectors in one place
-  with one backup; at 35 chunks an exact scan is instant, so there is no vector index.
-- **Chunk by `##` section.** Policy sections are self-contained (waiting periods, room rent…),
-  so a chunk is a meaningful unit to quote; the plan name is embedded with each chunk.
-- **Plan filter in SQL** (`WHERE plan_id IN (member's plan, 'common')`), not after retrieval, so
-  a Basic member's search can never even read Plus-plan text. A test proves it with `k=100`.
-- **`MIN_SCORE = 0.37`** was measured, not guessed: 12 in-policy questions scored ≥ 0.387,
-  9/10 out-of-policy ones scored < 0.37. The gate is a coarse first filter; the verified-quote
-  rule is the second line.
-- **Small `LLMClient` interface** (`generate(system, messages, tools)`), one Gemini class, one
-  fake. Tests and CI never call the network.
-- **We run the tools, not the SDK** (automatic function calling disabled), so the member id is
-  always injected by our code.
-- **Fail closed.** Unknown tools, extra arguments (e.g. a sneaked-in `member_id`), unparseable
-  JSON, unverified quotes, an unset admin key: all end in a safe refusal, never a crash or an
-  open door.
-- **Race-safe decisions.** `UPDATE … WHERE status = 'pending'`: two reviewers clicking at once
-  cannot both decide a ticket (the second gets 409).
+- One database. pgvector inside Postgres keeps claims, tickets, logs and vectors together. At
+  35 chunks an exact scan is instant, so there is no vector index.
+- Chunks are `##` sections. Policy sections (waiting periods, room rent…) stand on their own,
+  which makes them good units to quote. The plan name is embedded with each chunk.
+- The plan filter is in SQL (`WHERE plan_id IN (member's plan, 'common')`), so a Basic member's
+  search never reads Plus text. A test checks this with `k=100`.
+- `MIN_SCORE = 0.37` was measured: 12 in-policy questions scored at least 0.387, and 9 of 10
+  out-of-policy questions scored below 0.37. The gate is a coarse filter; quote verification
+  is the second check.
+- The `LLMClient` interface is one method, `generate(system, messages, tools)`, with a Gemini
+  implementation and a fake. Tests and CI never hit the network.
+- Automatic function calling is off. The app runs the tools itself so the member id is always
+  set by server code.
+- Failures are refusals. Unknown tools, extra arguments (such as a smuggled `member_id`),
+  unparseable JSON, unverified quotes and an unset admin key all end in a safe reply.
+- Ticket decisions use `UPDATE … WHERE status = 'pending'`, so if two reviewers decide at once
+  the second gets a 409.
 
 ## Limitations
 
-- **Synthetic, small data.** 4 short policy documents and 31 claims; real wordings are far longer
-  and messier (tables, cross-references), which would need better chunking and re-ranking.
-- **The score gate is coarse.** MiniLM cosine scores of in- and out-of-policy questions overlap
-  near the threshold (e.g. "price of Sahay Health shares" scores ~0.38 for Senior members); the
-  LLM plus quote check catches those, at the cost of LLM calls.
-- **Regex guardrails.** Medical-advice and false-approval detection are pattern lists: easy to
-  audit and test, but a determined rephrasing can slip past the medical check (the LLM is also
-  told not to give advice).
-- **Demo auth.** API keys are stored in plain text and the admin key is shared (`decided_by` is
-  always `admin`). A real system needs hashed keys, per-reviewer accounts and an audit trail.
-- **Free-tier LLM.** Gemini free tier allows ~20 requests/day per model and often returns 503
-  under load; the client retries, and `/v1/ask` returns a clean 503 when Gemini is down.
-- **Memory.** The container uses ~375 MB (PyTorch + MiniLM); it fits a 512 MB free instance only
-  just.
+- The data is small: 4 short policy documents and 31 claims. Real wordings are longer and
+  messier (tables, cross-references) and would need better chunking and re-ranking.
+- The score gate is coarse. In- and out-of-policy scores overlap near the threshold ("price of
+  Sahay Health shares" scores about 0.38 for Senior members), so some off-topic questions reach
+  the LLM and are caught later.
+- Medical-advice and false-approval detection are regex lists. They are easy to test but can be
+  rephrased around; the system prompt also forbids medical advice.
+- Auth is demo-grade. API keys are stored in plain text and the admin key is shared
+  (`decided_by` is always `admin`). Production would need hashed keys, per-reviewer accounts
+  and an audit trail.
+- The Gemini free tier allows about 20 requests per day per model, and model aliases share
+  quota. The client retries 429/5xx errors, and `/v1/ask` returns 503 when Gemini is down.
+- The container uses about 375 MB of RAM (PyTorch + MiniLM), close to a 512 MB free instance.
 
-## Deploy (Render + Neon)
+## Deploying (Render + Neon)
 
-1. Create a free Neon Postgres database and copy its connection string (`…?sslmode=require`).
-2. On Render: **New → Blueprint**, pick this repository; [`render.yaml`](render.yaml) defines a
-   Docker web service.
-3. Set `DATABASE_URL` (Neon) and `GEMINI_API_KEY`; `ADMIN_API_KEY` is generated for you.
-   The container creates tables, seeds demo data and embeds the policies on first start.
+1. Create a Neon Postgres database and copy its connection string (`…?sslmode=require`).
+2. In Render, choose New → Blueprint and pick this repository. [`render.yaml`](render.yaml)
+   defines a Docker web service.
+3. Set `DATABASE_URL` and `GEMINI_API_KEY`. `ADMIN_API_KEY` is generated. The container creates
+   tables, seeds demo data and embeds the policies on first start.
 
-## Project layout
+## Layout
 
 ```
 app/            FastAPI app: auth, agent loop, tools, guardrails, LLM clients, SQL
-data/policies/  Synthetic policy wordings (Basic, Plus, Senior) + claims-process guide
+data/policies/  Synthetic policy wordings (Basic, Plus, Senior) and a claims-process guide
 scripts/        seed.py (demo data), ingest.py (chunk + embed), search_demo.py
-evals/          30 scenarios, runner, saved results
+evals/          scenarios, runner, saved results
 tests/          pytest suite (fake LLM; one live test behind -m live)
 ```

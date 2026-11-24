@@ -98,11 +98,11 @@ def run_agent(
             tokens_out=tokens_out,
         )
 
-    # 1. Medical advice: fixed reply, no LLM.
+    # Medical advice gets a fixed reply without calling the LLM.
     if guardrails.is_medical_advice(question):
         return result(guardrails.MEDICAL_REPLY, refused=True)
 
-    # 2. Retrieval gate for policy questions: weak match -> ticket for a human, no LLM.
+    # Policy questions with no good match go to a human instead of the LLM.
     if not guardrails.is_claim_question(question):
         best = retrieval.search_policy(conn, member.plan_id, question, k=1)
         top_score = best[0]["score"] if best else 0.0
@@ -112,8 +112,7 @@ def run_agent(
             )
             return result(guardrails.NOT_FOUND_REPLY, refused=True)
 
-    # 3. Tool-calling loop. Each round runs at least one tool, so this ends after
-    #    at most MAX_TOOL_CALLS + 1 LLM calls.
+    # Each round runs at least one tool, so this makes at most MAX_TOOL_CALLS + 1 LLM calls.
     messages = [Message(role="user", text=question)]
     while True:
         response = llm.generate(SYSTEM_PROMPT, messages, TOOL_SPECS)
@@ -139,7 +138,6 @@ def run_agent(
             results.append(ToolResult(call=call, result=run_tool(ctx, call)))
         messages.append(Message(role="tool", tool_results=results))
 
-    # 4. Check the final answer in code.
     final = parse_final_answer(response.text)
     if final is None:
         return result(FALLBACK_ANSWER, refused=True)
