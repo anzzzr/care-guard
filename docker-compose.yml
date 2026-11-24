@@ -1,4 +1,4 @@
-# M0: database only. The app service is added in M6 together with the Dockerfile.
+# `docker compose up --build` runs Postgres (with pgvector) and the API on http://localhost:8000.
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -15,6 +15,20 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    # GEMINI_API_KEY, GEMINI_MODEL, ADMIN_API_KEY, MIN_SCORE come from .env if it exists.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-careguard}:${POSTGRES_PASSWORD:-careguard}@db:5432/${POSTGRES_DB:-careguard}
+    ports:
+      - "8000:8000"
 
 volumes:
   pgdata:

@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: careguard
+          POSTGRES_PASSWORD: careguard
+          POSTGRES_DB: careguard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U careguard -d careguard"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://careguard:careguard@localhost:5432/careguard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.12
+
+      - name: Cache embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2
+
+      - name: Lint
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Tests (fake LLM, no API key needed)
+        run: uv run pytest
+
+      - name: Evals (fake mode)
+        run: uv run python -m evals.run_evals --fake

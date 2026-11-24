@@ -1,11 +1,13 @@
 """Create all tables and load synthetic plans, members and claims.
 
 Run from the project root:  uv run python -m scripts.seed
+                 (container start:  python -m scripts.seed --if-empty)
 
 All data is made up. Re-running replaces members, claims, tickets and logs.
 Policy chunks are left alone (scripts/ingest.py owns them).
 """
 
+import sys
 from datetime import date
 
 import psycopg
@@ -415,6 +417,12 @@ def seed(conn: psycopg.Connection) -> None:
 
 def main() -> None:
     with connect() as conn:
+        if "--if-empty" in sys.argv:
+            # Used on container start: keep existing tickets and logs across restarts.
+            create_tables(conn)
+            if conn.execute("SELECT count(*) AS n FROM members").fetchone()["n"]:
+                print("Database already seeded; skipping.")
+                return
         seed(conn)
     print(f"Seeded {len(PLANS)} plans, {len(MEMBERS)} members, {len(CLAIMS)} claims.")
 

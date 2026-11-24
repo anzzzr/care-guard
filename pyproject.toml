@@ -8,7 +8,9 @@ dependencies = [
     "google-genai>=3.6.1",
     "psycopg[binary]>=3.2",
     "pydantic-settings>=2.4",
+    "pyyaml>=6.0.4",
     "sentence-transformers>=6.3.0",
+    "torch>=2.15.0",
     "uvicorn[standard]>=0.30",
 ]
 
@@ -30,3 +32,13 @@ select = ["E", "F", "I", "B", "UP"]
 testpaths = ["tests"]
 addopts = "-m 'not live'"
 markers = ["live: calls the real Gemini API (run with -m live)"]
+
+# On Linux (Docker, CI) use the CPU-only PyTorch build: the default one pulls multi-GB
+# CUDA libraries we never use. macOS wheels from PyPI are already CPU/MPS only.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

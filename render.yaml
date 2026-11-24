@@ -1,0 +1,19 @@
+# Render blueprint: New > Blueprint > pick this repo. Database: a free Neon Postgres
+# (pgvector is built in; the app runs CREATE EXTENSION itself).
+services:
+  - type: web
+    name: careguard
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false # paste the Neon connection string (keep ?sslmode=require)
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      - key: MIN_SCORE
+        value: "0.37"
+      - key: ADMIN_API_KEY
+        generateValue: true
