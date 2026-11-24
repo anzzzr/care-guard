@@ -1,13 +1,32 @@
+import uuid
+from functools import lru_cache
 from typing import Annotated
 
 import psycopg
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 
+from app.agent import run_agent
 from app.auth import get_current_member
+from app.config import settings
 from app.db import fetch_claims, get_conn
-from app.models import Claim, Member
+from app.llm import GeminiClient, LLMClient
+from app.models import AskRequest, AskResponse, Claim, Member
 
 app = FastAPI(title="CareGuard", version="0.1.0")
+
+
+@lru_cache(maxsize=1)
+def _gemini_client() -> GeminiClient:
+    return GeminiClient(api_key=settings.gemini_api_key, model=settings.gemini_model)
+
+
+def get_llm() -> LLMClient:
+    """FastAPI dependency; tests replace it with a FakeLLMClient."""
+    if not (settings.gemini_api_key and settings.gemini_model):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "GEMINI_API_KEY and GEMINI_MODEL must be set"
+        )
+    return _gemini_client()
 
 
 @app.get("/health")
@@ -22,3 +41,22 @@ def list_my_claims(
 ) -> list[Claim]:
     """List the calling member's claims. No LLM involved."""
     return [Claim(**row) for row in fetch_claims(conn, member.id)]
+
+
+@app.post("/v1/ask")
+def ask(
+    body: AskRequest,
+    member: Annotated[Member, Depends(get_current_member)],
+    conn: Annotated[psycopg.Connection, Depends(get_conn)],
+    llm: Annotated[LLMClient, Depends(get_llm)],
+) -> AskResponse:
+    """Answer a member's question from their own policy and claims."""
+    result = run_agent(conn, member, body.question, llm)
+    return AskResponse(
+        answer=result.answer,
+        citations=result.citations,
+        tools_used=result.tools_used,
+        refused=result.refused,
+        ticket_id=result.ticket_id,
+        request_id=uuid.uuid4().hex,
+    )

@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql://careguard:careguard@localhost:5432/careguard"
+    gemini_api_key: str = ""
+    gemini_model: str = ""
 
 
 settings = Settings()
