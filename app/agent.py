@@ -144,6 +144,11 @@ def run_agent(
     if final is None:
         return result(FALLBACK_ANSWER, refused=True)
 
+    # Answers must come from the member's own data: an answer that used no tool at all is
+    # ungrounded (or a polite decline), so it counts as a refusal and gets the safe reply.
+    if not tools_used:
+        return result(FALLBACK_ANSWER, refused=True)
+
     # An answer that used the policy must quote it, and every quote must be real.
     used_policy = "search_policy" in tools_used
     if (used_policy and not final.citations) or not guardrails.citations_are_verified(

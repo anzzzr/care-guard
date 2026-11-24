@@ -117,6 +117,13 @@ def test_policy_answer_without_any_quote_is_rejected(client: TestClient) -> None
     assert body["refused"] is True
 
 
+def test_answer_without_any_tool_is_a_refusal(client: TestClient) -> None:
+    # Passes the gate, but the LLM answers from its own knowledge instead of any tool.
+    body, _ = ask(client, "What is the room rent limit?", [final("It is ₹10,000 per day.")])
+    assert body["refused"] is True
+    assert body["answer"] == FALLBACK_ANSWER
+
+
 # ---------- False approvals ----------
 
 

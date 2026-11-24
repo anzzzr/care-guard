@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.rows import dict_row
 
 from app.config import settings
@@ -12,6 +13,15 @@ SCHEMA_FILE = Path(__file__).with_name("schema.sql")
 def connect(url: str | None = None) -> psycopg.Connection:
     """Open a connection whose rows come back as dicts."""
     return psycopg.connect(url or settings.database_url, row_factory=dict_row)
+
+
+def create_database_if_missing(url: str) -> None:
+    """Used for the separate test and eval databases, so they never touch dev data."""
+    dbname = conninfo_to_dict(url)["dbname"]
+    with psycopg.connect(make_conninfo(url, dbname="postgres"), autocommit=True) as conn:
+        exists = conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (dbname,)).fetchone()
+        if not exists:
+            conn.execute(f'CREATE DATABASE "{dbname}"')
 
 
 def create_tables(conn: psycopg.Connection) -> None:
