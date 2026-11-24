@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+
+# Local notes
+CLAUDE.md
+PROJECT_PLAN.md
