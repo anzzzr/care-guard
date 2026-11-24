@@ -7,8 +7,12 @@ model means writing one new class with a `generate` method.
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
+import httpx2
 from google import genai
 from google.genai import errors, types
+
+# One Gemini request may take at most this long. Without it a stalled call hangs the request.
+REQUEST_TIMEOUT_MS = 30_000
 
 
 class LLMError(Exception):
@@ -61,7 +65,8 @@ class GeminiClient:
             attempts=4, initial_delay=1.0, max_delay=8.0, http_status_codes=[429, 500, 503, 504]
         )
         self._client = genai.Client(
-            api_key=api_key, http_options=types.HttpOptions(retry_options=retry)
+            api_key=api_key,
+            http_options=types.HttpOptions(retry_options=retry, timeout=REQUEST_TIMEOUT_MS),
         )
         self._model = model
 
@@ -89,6 +94,8 @@ class GeminiClient:
             )
         except errors.APIError as exc:
             raise LLMError(f"Gemini error {exc.code}: {exc.message}") from exc
+        except httpx2.TimeoutException as exc:
+            raise LLMError(f"Gemini timed out after {REQUEST_TIMEOUT_MS // 1000}s") from exc
         content = response.candidates[0].content if response.candidates else None
         parts = (content.parts if content else None) or []
         usage = response.usage_metadata

@@ -1,12 +1,13 @@
 import json
 from collections.abc import Callable
 
+import httpx2
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
 from app.agent import FALLBACK_ANSWER, MAX_TOOL_CALLS, parse_final_answer
-from app.llm import FakeLLMClient, LLMError, LLMResponse, ToolCall
+from app.llm import FakeLLMClient, GeminiClient, LLMError, LLMResponse, ToolCall
 from app.main import app, get_llm
 from app.models import Member
 from app.tools import ToolContext, run_tool
@@ -157,3 +158,15 @@ def test_llm_provider_error_becomes_clean_503(client: TestClient) -> None:
     )
     assert response.status_code == 503
     assert "403" not in response.text  # provider details are not shown to members
+
+
+def test_gemini_timeout_becomes_llm_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stalled Gemini call must fail as LLMError (so /v1/ask returns 503), not hang."""
+    client = GeminiClient(api_key="test-key", model="test-model")
+
+    def stall(**_: object) -> None:
+        raise httpx2.ReadTimeout("timed out")
+
+    monkeypatch.setattr(client._client.models, "generate_content", stall)
+    with pytest.raises(LLMError, match="timed out"):
+        client.generate("system", [], [])
