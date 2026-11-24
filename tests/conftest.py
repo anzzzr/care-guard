@@ -8,6 +8,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from app.db import connect, get_conn
 from app.main import app
+from scripts.ingest import ingest
 from scripts.seed import seed
 
 # Tests use their own database so they never wipe the dev data.
@@ -29,6 +30,7 @@ def seeded_db() -> str:
     _create_database_if_missing(TEST_DATABASE_URL)
     with connect(TEST_DATABASE_URL) as conn:
         seed(conn)
+        ingest(conn)
     return TEST_DATABASE_URL
 
 
