@@ -8,7 +8,11 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
+
+
+class LLMError(Exception):
+    """The LLM provider failed (bad key, quota, outage). Callers need not know which provider."""
 
 
 @dataclass
@@ -73,9 +77,12 @@ class GeminiClient:
             # We run tools ourselves, in agent.py, so member_id stays in our code.
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
-        response = self._client.models.generate_content(
-            model=self._model, contents=[_to_gemini(m) for m in messages], config=config
-        )
+        try:
+            response = self._client.models.generate_content(
+                model=self._model, contents=[_to_gemini(m) for m in messages], config=config
+            )
+        except errors.APIError as exc:
+            raise LLMError(f"Gemini error {exc.code}: {exc.message}") from exc
         content = response.candidates[0].content if response.candidates else None
         parts = (content.parts if content else None) or []
         usage = response.usage_metadata

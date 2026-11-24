@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.agent import FALLBACK_ANSWER, MAX_TOOL_CALLS, parse_final_answer
-from app.llm import FakeLLMClient, LLMResponse, ToolCall
+from app.llm import FakeLLMClient, LLMError, LLMResponse, ToolCall
 from app.main import app, get_llm
 from app.models import Member
 from app.tools import ToolContext, run_tool
@@ -143,3 +143,15 @@ def test_unknown_tool_is_an_error_not_a_crash(db: psycopg.Connection) -> None:
 def test_fenced_json_is_accepted() -> None:
     parsed = parse_final_answer('```json\n{"answer": "ok", "citations": []}\n```')
     assert parsed is not None and parsed.answer == "ok"
+
+
+class FailingLLM:
+    def generate(self, system: str, messages: list, tools: list) -> LLMResponse:
+        raise LLMError("Gemini error 403: free tier not available")
+
+
+def test_llm_provider_error_becomes_clean_503(client: TestClient) -> None:
+    app.dependency_overrides[get_llm] = FailingLLM
+    response = client.post("/v1/ask", json={"question": "hi"}, headers={"X-API-Key": ASHA})
+    assert response.status_code == 503
+    assert "403" not in response.text  # provider details are not shown to members

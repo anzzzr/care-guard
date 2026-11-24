@@ -1,3 +1,4 @@
+import logging
 import uuid
 from functools import lru_cache
 from typing import Annotated
@@ -9,9 +10,10 @@ from app.agent import run_agent
 from app.auth import get_current_member
 from app.config import settings
 from app.db import fetch_claims, get_conn
-from app.llm import GeminiClient, LLMClient
+from app.llm import GeminiClient, LLMClient, LLMError
 from app.models import AskRequest, AskResponse, Claim, Member
 
+logger = logging.getLogger("careguard")
 app = FastAPI(title="CareGuard", version="0.1.0")
 
 
@@ -51,7 +53,14 @@ def ask(
     llm: Annotated[LLMClient, Depends(get_llm)],
 ) -> AskResponse:
     """Answer a member's question from their own policy and claims."""
-    result = run_agent(conn, member, body.question, llm)
+    try:
+        result = run_agent(conn, member, body.question, llm)
+    except LLMError as exc:
+        # Provider details go to the server log, not to the member.
+        logger.error("LLM call failed: %s", exc)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "The assistant is unavailable. Please try later."
+        ) from exc
     return AskResponse(
         answer=result.answer,
         citations=result.citations,
