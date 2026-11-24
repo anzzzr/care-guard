@@ -2,10 +2,13 @@ import logging
 import time
 import uuid
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 import psycopg
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app import db
 from app.agent import run_agent
@@ -18,6 +21,10 @@ from app.models import AskRequest, AskResponse, Claim, DecideRequest, Member, Me
 
 logger = logging.getLogger("careguard")
 app = FastAPI(title="CareGuard", version="0.1.0")
+
+# The web UI is plain static files that call the API below from the same origin.
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 Conn = Annotated[psycopg.Connection, Depends(get_conn)]
 CurrentMember = Annotated[Member, Depends(get_current_member)]
@@ -38,9 +45,20 @@ def get_llm() -> LLMClient:
     return _gemini_client()
 
 
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/v1/me")
+def who_am_i(member: CurrentMember) -> Member:
+    """The member the API key belongs to (name, plan, age). No LLM involved."""
+    return member
 
 
 @app.get("/v1/claims")

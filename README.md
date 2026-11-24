@@ -7,8 +7,8 @@ policy sentence quoted. Appeals and anything involving money go to a human revie
 
 All data is synthetic: no real people, policies or medical records.
 
-**Live demo:** https://careguard.ambitiouscliff-ff521ede.koreacentral.azurecontainerapps.io/docs
-(click Authorize and use `demo-key-m001`). It scales to zero when idle, so the first request
+**Live demo:** https://careguard.ambitiouscliff-ff521ede.koreacentral.azurecontainerapps.io
+(web UI: pick a demo member and ask; the API is at `/docs`). It scales to zero when idle, so the first request
 can take up to a minute.
 
 ## Why
@@ -84,7 +84,7 @@ uv run uvicorn app.main:app --reload --reload-dir app
 Tests and evals (tests use a separate `careguard_test` database, evals use `careguard_eval`):
 
 ```bash
-uv run pytest                              # 70 tests, fake LLM, no network
+uv run pytest                              # 73 tests, fake LLM, no network
 uv run pytest -m live -s                   # 1 real Gemini call
 uv run python -m evals.run_evals --fake    # 30 scenarios, rule-based fake LLM (used in CI)
 uv run python -m evals.run_evals --live    # 30 scenarios against Gemini
@@ -95,7 +95,9 @@ uv run ruff check . && uv run ruff format --check .
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
+| GET | `/` | none | web UI (member chat, claims, reviewer tab) served from `app/static/` |
 | GET | `/health` | none | `{"status":"ok"}` |
+| GET | `/v1/me` | `X-API-Key` | the calling member (name, plan, age) |
 | POST | `/v1/ask` | `X-API-Key` | `{"question"}` returns answer, citations, tools_used, refused, ticket_id, request_id |
 | GET | `/v1/claims` | `X-API-Key` | the member's claims (no LLM) |
 | GET | `/admin/tickets` | `X-Admin-Key` | pending review tickets |

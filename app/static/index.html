@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CareGuard: claims and benefits assistant</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">+</span>
+      <div>
+        <strong>CareGuard</strong>
+        <span class="tagline">Sahay Health claims assistant · synthetic demo data</span>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" class="tab active" data-view="member" aria-selected="true">Member</button>
+      <button role="tab" class="tab" data-view="reviewer" aria-selected="false">Reviewer</button>
+      <a class="tab link" href="/docs" target="_blank" rel="noopener">API docs ↗</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Member view -->
+    <section id="view-member" class="view">
+      <aside class="sidebar">
+        <label class="field">
+          <span>Signed in as (demo member)</span>
+          <select id="member-select"></select>
+        </label>
+        <div id="member-card" class="card member-card"></div>
+        <h2 class="section-title">My claims</h2>
+        <ul id="claims" class="claims"><li class="muted">Loading…</li></ul>
+      </aside>
+
+      <section class="chat">
+        <div id="messages" class="messages">
+          <div class="welcome">
+            <h1>Ask about your policy or claims</h1>
+            <p>Answers come only from your own policy and claims, with the policy sentence quoted.
+              Appeals go to a human reviewer. Try one of these:</p>
+            <div id="samples" class="samples"></div>
+          </div>
+        </div>
+        <form id="ask-form" class="ask">
+          <input id="question" maxlength="1000" autocomplete="off"
+                 placeholder="e.g. Is cataract surgery covered?" aria-label="Your question">
+          <button id="ask-btn" type="submit">Ask</button>
+        </form>
+      </section>
+    </section>
+
+    <!-- Reviewer view -->
+    <section id="view-reviewer" class="view hidden">
+      <div class="reviewer">
+        <form id="admin-form" class="card admin-login">
+          <label class="field">
+            <span>Admin key (X-Admin-Key)</span>
+            <input id="admin-key" type="password" autocomplete="off" placeholder="Paste the admin key">
+          </label>
+          <button type="submit">Load</button>
+          <p class="muted small">Kept in this browser tab only. Only a human reviewer can approve or reject a ticket;
+            the assistant can only open one.</p>
+        </form>
+        <div id="admin-error" class="error hidden"></div>
+        <div id="metrics" class="metrics"></div>
+        <h2 class="section-title">Pending tickets</h2>
+        <div id="tickets" class="tickets"><p class="muted">Enter the admin key to load tickets.</p></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

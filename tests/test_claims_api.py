@@ -32,3 +32,16 @@ def test_claim_fields_are_returned(client: TestClient) -> None:
     assert dengue["amount_approved"] == 42000
     assert "Section 3.2" in dengue["rejection_reason"]
     assert "api_key" not in dengue
+
+
+def test_me_returns_the_calling_member(client: TestClient) -> None:
+    response = client.get("/v1/me", headers={"X-API-Key": "demo-key-m001"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "M001"
+    assert body["plan_id"] == "basic"
+    assert "api_key" not in body
+
+
+def test_me_requires_an_api_key(client: TestClient) -> None:
+    assert client.get("/v1/me").status_code == 401
