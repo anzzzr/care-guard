@@ -7,6 +7,10 @@ policy sentence quoted. Appeals and anything involving money go to a human revie
 
 All data is synthetic: no real people, policies or medical records.
 
+**Live demo:** https://careguard.ambitiouscliff-ff521ede.koreacentral.azurecontainerapps.io/docs
+(click Authorize and use `demo-key-m001`). It scales to zero when idle, so the first request
+can take up to a minute.
+
 ## Why
 
 Policy wordings and claim letters are hard to read, and a chatbot is an obvious fit. The risks
@@ -184,6 +188,25 @@ guardrails on every push without an API key.
 - The Gemini free tier allows about 20 requests per day per model, and model aliases share
   quota. The client retries 429/5xx errors, and `/v1/ask` returns 503 when Gemini is down.
 - The container uses about 375 MB of RAM (PyTorch + MiniLM), close to a 512 MB free instance.
+
+## Deploying (Azure Container Apps + Neon)
+
+The live demo runs this way. On every push to `main`, CI tests the code and then publishes the
+image to `ghcr.io/anzzzr/care-guard` (public, so Azure pulls it without a registry login).
+
+```bash
+az group create -n careguard-rg -l koreacentral
+az containerapp env create -n careguard-env -g careguard-rg -l koreacentral --logs-destination none
+az containerapp create -n careguard -g careguard-rg --environment careguard-env \
+  --image ghcr.io/anzzzr/care-guard:latest --ingress external --target-port 8000 \
+  --cpu 0.5 --memory 1.0Gi --min-replicas 0 --max-replicas 1 \
+  --secrets database-url="$NEON_URL" gemini-api-key="$GEMINI_API_KEY" admin-api-key="$ADMIN_API_KEY" \
+  --env-vars DATABASE_URL=secretref:database-url GEMINI_API_KEY=secretref:gemini-api-key \
+             ADMIN_API_KEY=secretref:admin-api-key GEMINI_MODEL=gemini-3.5-flash-lite MIN_SCORE=0.37
+```
+
+`--min-replicas 0` scales to zero when idle and `--max-replicas 1` caps cost. To roll out a
+new image: `az containerapp update -n careguard -g careguard-rg --image ghcr.io/anzzzr/care-guard:<sha>`.
 
 ## Deploying (Render + Neon)
 
